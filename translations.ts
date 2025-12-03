@@ -63,6 +63,14 @@ export const translations: Record<string, Record<Language, string>> = {
   cancel: { lo: 'ຍົກເລີກ', en: 'Cancel' },
   scanPrompt: { lo: 'ສະແກນດ້ວຍ OnePay ຫຼື ແອັບທະນາຄານ', en: 'Scan with OnePay or Mobile Banking' },
   waiting: { lo: 'ກຳລັງລໍຖ້າການຊຳລະ...', en: 'Waiting for payment...' },
+  printReceipt: { lo: 'ພິມໃບບິນ', en: 'Print Receipt' },
+  done: { lo: 'ສຳເລັດ', en: 'Done' },
+  socketError: { lo: 'ບໍ່ສາມາດເຊື່ອມຕໍ່ Socket ໄດ້ - ກະລຸນາກົດຢືນຢັນເອງ', en: 'Socket Disconnected - Please confirm manually' },
+  offlineMode: { lo: 'ໂຫມດ Offline (ກະລຸນາກວດສອບຍອດເງິນ ແລະ ກົດຢືນຢັນ)', en: 'Offline Mode (Please check payment and confirm)' },
+  retryConnect: { lo: 'ລອງເຊື່ອມຕໍ່ໃໝ່', en: 'Retry Connection' },
+  connectionError: { lo: 'ການເຊື່ອມຕໍ່ຂັດຂ້ອງ', en: 'Connection Error' },
+  socketBlockError: { lo: 'ເຄືອຂ່າຍບລັອກການເຊື່ອມຕໍ່ (Firewall/Proxy)', en: 'Connection blocked by network (Firewall/Proxy)' },
+  socketNetError: { lo: 'ກວດສອບອິນເຕີເນັດຂອງທ່ານ', en: 'Check your internet connection' },
 
   // Admin
   overview: { lo: 'ພາບລວມ (Dashboard)', en: 'Dashboard' },
@@ -75,9 +83,10 @@ export const translations: Record<string, Record<Language, string>> = {
   
   // Products
   manageProducts: { lo: 'ຈັດການສິນຄ້າ', en: 'Manage Products' },
-  manageInv: { lo: 'ເພີ່ມ, ແກ້ໄຂ ແລະ ລຶບ', en: 'Add, Edit and Delete' },
+  manageInv: { lo: 'ເພີ່ມ, ແກ້ໄຂ ແລະ ປິດການໃຊ້ງານ', en: 'Add, Edit and Disable' },
   addProduct: { lo: 'ເພີ່ມສິນຄ້າ', en: 'Add Product' },
   addNewProduct: { lo: 'ເພີ່ມລາຍການໃໝ່', en: 'Add New Product' },
+  editProduct: { lo: 'ແກ້ໄຂສິນຄ້າ', en: 'Edit Product' },
   prodName: { lo: 'ຊື່ສິນຄ້າ', en: 'Product Name' },
   price: { lo: 'ລາຄາ', en: 'Price' },
   cost: { lo: 'ຕົ້ນທຶນ', en: 'Cost' },
@@ -87,6 +96,10 @@ export const translations: Record<string, Record<Language, string>> = {
   imageUrl: { lo: 'ລິ້ງຮູບພາບ', en: 'Image URL' },
   cancelBtn: { lo: 'ຍົກເລີກ', en: 'Cancel' },
   saveBtn: { lo: 'ບັນທຶກ', en: 'Save' },
+  updateBtn: { lo: 'ອັບເດດ', en: 'Update' },
+  status: { lo: 'ສະຖານະ', en: 'Status' },
+  active: { lo: 'ເປີດໃຊ້', en: 'Active' },
+  inactive: { lo: 'ປິດໃຊ້', en: 'Inactive' },
   
   // Categories
   manageCategories: { lo: 'ຈັດການໝວດໝູ່', en: 'Manage Categories' },
@@ -128,5 +141,15 @@ export const translations: Record<string, Record<Language, string>> = {
   enablePhaJay: { lo: 'ເປີດໃຊ້ງານ PhaJay QR', en: 'Enable PhaJay QR' },
   secretKey: { lo: 'Secret Key', en: 'Secret Key' },
   storeTag: { lo: 'Tag ຮ້ານຄ້າ (Branch ID)', en: 'Store Tag (Branch ID)' },
-  settingsSaved: { lo: 'ບັນທຶກການຕັ້ງຄ່າສຳເລັດ', en: 'Settings Saved Successfully' }
+  settingsSaved: { lo: 'ບັນທຶກການຕັ້ງຄ່າສຳເລັດ', en: 'Settings Saved Successfully' },
+
+  // Receipt Settings
+  receiptSettings: { lo: 'ຕັ້ງຄ່າໃບບິນ', en: 'Receipt Settings' },
+  logoUrl: { lo: 'ລິ້ງໂລໂກ້ (URL)', en: 'Logo URL' },
+  receiptHeader: { lo: 'ຂໍ້ຄວາມຫົວບິນ', en: 'Receipt Header' },
+  receiptFooter: { lo: 'ຂໍ້ຄວາມທ້າຍບິນ', en: 'Receipt Footer' },
+  printerSettings: { lo: 'ຕັ້ງຄ່າເຄື່ອງພິມ', en: 'Printer Settings' },
+  paperSize: { lo: 'ຂະໜາດເຈ້ຍ', en: 'Paper Size' },
+  paper58: { lo: '58ມມ (Thermal)', en: '58mm (Thermal)' },
+  paper80: { lo: '80ມມ (Thermal)', en: '80mm (Thermal)' },
 };

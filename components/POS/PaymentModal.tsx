@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Banknote, QrCode, ArrowRight, Loader2, CheckCircle2, Delete, RotateCcw, AlertCircle } from 'lucide-react';
-import { Language, StoreSettings } from '../../types';
+import { X, Banknote, QrCode, ArrowRight, Loader2, CheckCircle2, Delete, RotateCcw, AlertCircle, Printer, RefreshCw, Radio, Wifi, WifiOff, AlertTriangle, Key } from 'lucide-react';
+import { io, Socket } from 'socket.io-client'; // Import Socket.IO
+import { Language, StoreSettings, CartItem } from '../../types';
 import { translations } from '../../translations';
 import { PHAJAY_CONFIG } from '../../constants';
 
 interface PaymentModalProps {
   total: number;
+  items: CartItem[];
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (method: 'cash' | 'qr') => void;
@@ -14,7 +16,9 @@ interface PaymentModalProps {
   settings?: StoreSettings;
 }
 
-export const PaymentModal: React.FC<PaymentModalProps> = ({ total, isOpen, onClose, onConfirm, lang, settings }) => {
+type SocketStatus = 'idle' | 'connecting' | 'connected' | 'error';
+
+export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen, onClose, onConfirm, lang, settings }) => {
   const t = (key: string) => translations[key]?.[lang] || key;
   const [method, setMethod] = useState<'cash' | 'qr'>('cash');
   const [receivedAmount, setReceivedAmount] = useState<string>('');
@@ -25,13 +29,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, isOpen, onClo
   const [qrCodeImage, setQrCodeImage] = useState<string>('');
   const [isLoadingQR, setIsLoadingQR] = useState(false);
   const [qrError, setQrError] = useState<string>('');
-  // Use any to avoid NodeJS.Timeout vs number issues in different environments
-  const pollIntervalRef = useRef<any>(null);
+  
+  // Socket State
+  const socketRef = useRef<Socket | null>(null);
+  const [socketStatus, setSocketStatus] = useState<SocketStatus>('idle');
+  const [socketErrorMsg, setSocketErrorMsg] = useState<string>('');
 
   // Get active secret key from settings OR fallback to config
   const activeSecretKey = settings?.phajaySecretKey || PHAJAY_CONFIG.SECRET_KEY;
-  const activeTag = settings?.phajayTag || 'Store_01';
   const isPhaJayEnabled = settings?.enablePhaJay ?? true;
+
+  // Cleanup logic
+  const cleanupSocket = () => {
+    if (socketRef.current) {
+      console.log('Disconnecting socket...');
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -41,106 +57,333 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, isOpen, onClo
       setIsSuccess(false);
       setQrCodeImage('');
       setQrError('');
+      setSocketStatus('idle');
+      setSocketErrorMsg('');
+    } else {
+      // Ensure socket is closed when modal closes
+      cleanupSocket();
     }
+    
     return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      cleanupSocket();
     };
   }, [isOpen]);
 
-  // Generate QR when switching to QR mode
+  // Generate QR & Connect Socket when switching to QR mode
   useEffect(() => {
-    if (isOpen && method === 'qr' && !qrCodeImage) {
-      if (isPhaJayEnabled) {
-        generatePhaJayQR();
+    if (isOpen && method === 'qr') {
+      // 1. Generate QR Code
+      if (!qrCodeImage) {
+        if (isPhaJayEnabled) {
+          generatePhaJayQR();
+        }
       }
-    }
-    // Cleanup polling when switching away or closing
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, [method, isOpen]);
 
+      // 2. Connect Socket.IO for Realtime Payment Confirmation
+      if (isPhaJayEnabled) {
+        connectSocket();
+      }
+    } else {
+      // Disconnect if switching back to cash or closing
+      cleanupSocket();
+      setSocketStatus('idle');
+      setSocketErrorMsg('');
+    }
+  }, [method, isOpen, isPhaJayEnabled, activeSecretKey]);
+
+  // Helper to map technical errors to user-friendly text
+  const getFriendlyError = (msg: string) => {
+    if (msg.includes('websocket') || msg.includes('transport')) {
+      return t('socketBlockError');
+    }
+    if (msg.includes('xhr') || msg.includes('poll') || msg.includes('fetch')) {
+      return t('socketNetError');
+    }
+    return msg;
+  };
+
+  // --- 2. ຄຳສັ່ງເຊື່ອມຕໍ່ SocketIO (Connection Command) ---
+  const connectSocket = () => {
+    if (socketRef.current) return; // Already connected
+
+    const cleanKey = activeSecretKey?.trim();
+
+    // 1. ການຕັ້ງຄ່າການເຊື່ອມຕໍ່ (Validation)
+    if (!cleanKey || cleanKey.includes('YOUR_PLATFORM_SECRET_KEY') || cleanKey.length < 5) {
+      setSocketStatus('idle');
+      return;
+    }
+
+    // A. URL Construction
+    const baseUrl = PHAJAY_CONFIG.SOCKET_URL.replace(/\/$/, ''); 
+    
+    console.log('Connecting to Socket URL:', baseUrl); 
+    setSocketStatus('connecting');
+    setSocketErrorMsg('');
+    
+    // B. ສ້າງການເຊື່ອມຕໍ່ (Create Connection)
+    // We allow both 'websocket' and 'polling' transports to fix connection issues
+    // where raw websockets might be blocked by the network/browser environment.
+    const newSocket = io(baseUrl, {
+      transports: ['websocket', 'polling'], // Allow fallback to polling
+      query: {
+        key: cleanKey
+      },
+      reconnection: true,
+      reconnectionAttempts: 5,
+    });
+
+    // C. ຟັງເຫດການເຊື່ອມຕໍ່ (Listen for Connect)
+    newSocket.on('connect', () => {
+      console.log('Connected to the payment Support server!');
+      setSocketStatus('connected');
+      setSocketErrorMsg('');
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error('Connection failed:', err.message);
+      setSocketStatus('error');
+      // Use friendly error mapping
+      setSocketErrorMsg(getFriendlyError(err.message));
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      if (isOpen && method === 'qr') {
+        if (reason !== 'io client disconnect') {
+           setSocketStatus('error');
+           setSocketErrorMsg(t('connectionError'));
+        }
+      }
+    });
+
+    // D. Subscribe ເພື່ອຮັບຂໍ້ມູນ (Subscribe to Event)
+    // ລະບົບຕ້ອງຕັ້ງຄ່າ Listener ເພື່ອຟັງເຫດການທີ່ມີຊື່ວ່າ join::PLATFORM_SECRET_KEY
+    const eventName = `join::${cleanKey}`;
+    console.log('Subscribing to event:', eventName);
+    
+    newSocket.on(eventName, (data: any) => {
+      console.log('Data received (Payment Confirmation):', data);
+      
+      // 5. ການປະມວນຜົນການຢືນຢັນ (Process Payment Success)
+      // ຮັບຂໍ້ມູນການຢືນຢັນ data ທີ່ມີສະຖານະເປັນ PAYMENT_COMPLETED
+      if (data && data.status === 'PAYMENT_COMPLETED') {
+           console.log("BCEL Sandbox Payment Completed! Auto-confirming...");
+           
+           // Show success state briefly
+           setIsSuccess(true);
+           
+           // Clear listener to prevent duplicates
+           newSocket.off(eventName);
+
+           // Automatically close modal and save transaction after 1.5s
+           setTimeout(() => {
+              onConfirm('qr');
+           }, 1500);
+      }
+    });
+
+    socketRef.current = newSocket;
+  };
+
+  const retrySocketConnection = () => {
+    console.log('Retrying socket connection...');
+    // Cleanup old socket first
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    setSocketStatus('idle');
+    setSocketErrorMsg('');
+    
+    // Small delay to ensure clean slate
+    setTimeout(() => {
+        connectSocket();
+    }, 300);
+  };
+
+  // --- 3. ຄຳສັ່ງສ້າງ QR BCEL (Generate QR Payment) ---
   const generatePhaJayQR = async () => {
     setIsLoadingQR(true);
     setQrError('');
+    setQrCodeImage('');
+    const cleanKey = activeSecretKey?.trim();
 
-    // CHECK FOR DEMO MODE: If using the placeholder key or empty key, skip the real API call
-    if (!activeSecretKey || activeSecretKey === 'YOUR_PLATFORM_SECRET_KEY_HERE') {
-      console.log("Demo Mode: Using mock QR generation (No valid PhaJay key provided in Settings)");
+    // CHECK FOR DEMO MODE
+    if (!cleanKey || cleanKey.includes('YOUR_PLATFORM_SECRET_KEY')) {
       setTimeout(() => {
-        // Use a generic QR generator to simulate the BCEL QR return
         setQrCodeImage(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=BCEL_OnePay_${total}_DEMO`);
-        startPaymentStatusCheck('mock_txn_123');
         setIsLoadingQR(false);
       }, 1000);
       return;
     }
 
     try {
-      // NOTE: In a real app, call your backend, not PhaJay directly from frontend to protect SECRET_KEY
+      // 1. ກຳນົດ Request Payload
+      // ຂໍ້ຄວນລະວັງ: description ສໍາລັບ BCEL ບໍ່ຮອງຮັບຕົວອັກສອນລາວ/ໄທໃນປັດຈຸບັນ
+      const safeDescription = `Bill-${Date.now().toString().slice(-6)}`;
+      
+      const payload = {
+        amount: total,
+        description: safeDescription
+        // tag1, tag2 optional
+      };
+
+      // 2. ສົ່ງຄຳຮ້ອງຂໍ POST
+      // URL: https://payment-gateway.phajay.co/v1/api/test/payment/generate-bcel-qr
       const response = await fetch(PHAJAY_CONFIG.API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'secretKey': activeSecretKey
+          'secretKey': cleanKey // Headers: ຕ້ອງປະກອບມີ secretKey
         },
-        body: JSON.stringify({
-          amount: total,
-          description: `POS Order Payment - ${settings?.storeName || 'Sabaidee POS'}`,
-          tag1: activeTag,
-          tag2: 'POS_ORDER'
-        })
+        body: JSON.stringify(payload)
       });
 
+      // 3. ຈັດການ Response
       if (response.ok) {
-        const data = await response.json();
-        setQrCodeImage(data.qrCode);
-        startPaymentStatusCheck(data.transactionId);
+        const result = await response.json();
+        console.log("Response QR Sandbox:", result);
+        
+        let qr = '';
+        if (result.qrCode) {
+            qr = result.qrCode;
+        } else if (result.data && result.data.qrCode) {
+            qr = result.data.qrCode;
+        }
+
+        if (qr) {
+           // ລະບົບຈະໄດ້ຮັບຂໍ້ມູນທີ່ປະກອບມີ QR String.
+           // Convert raw QR string to renderable image URL for display
+           setQrCodeImage(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
+        } else {
+           throw new Error('QR Code not found in response');
+        }
       } else {
-        throw new Error('API Error');
+        const errorText = await response.text();
+        console.error("Error generating BCEL Sandbox QR:", errorText);
+        
+        try {
+          const errJson = JSON.parse(errorText);
+          if (errJson.message === 'BAD_REQUEST' && errJson.detail) {
+            throw new Error(errJson.detail);
+          }
+          throw new Error(errJson.message || errorText);
+        } catch (e) {
+          throw new Error(errorText || `API Error: ${response.status}`);
+        }
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("PhaJay API Error:", error);
+      let errorMessage = "Connection failed";
       
-      // Fallback in case a real key was attempted but failed
-      setTimeout(() => {
-        setQrCodeImage(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=BCEL_OnePay_${total}_DEMO`);
-        startPaymentStatusCheck('mock_txn_123');
-      }, 1000);
+      if (error.message.includes("Failed to fetch")) {
+        errorMessage = "CORS/Network Error. Ensure you are allowing this domain or check internet.";
+      } else {
+        errorMessage = error.message || "Unknown API Error";
+      }
+      setQrError(errorMessage);
     } finally {
       setIsLoadingQR(false);
     }
   };
 
-  const startPaymentStatusCheck = (txnId: string) => {
-    // Simulate Webhook/Socket checking
-    let checkCount = 0;
-    pollIntervalRef.current = setInterval(() => {
-      checkCount++;
-      // Mocking a successful payment after ~4 seconds
-      if (checkCount > 2) { 
-        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-        handleConfirm(); // Auto-confirm when payment detected
-      }
-    }, 2000);
+  const handlePrint = () => {
+    // Basic Thermal Receipt Printing Logic
+    const printWindow = window.open('', '', 'width=600,height=600');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Receipt</title>
+            <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Lao+Looped:wght@400;700&display=swap" rel="stylesheet">
+            <style>
+              body { font-family: 'Noto Sans Lao Looped', 'Courier New', monospace; font-size: 12px; width: ${settings?.printerPaperSize === '58mm' ? '58mm' : '80mm'}; margin: 0 auto; padding: 10px; color: #000; }
+              .text-center { text-align: center; }
+              .text-right { text-align: right; }
+              .bold { font-weight: bold; }
+              .line { border-bottom: 1px dashed #000; margin: 10px 0; }
+              .item { display: flex; justify-content: space-between; margin-bottom: 5px; }
+              .header { font-size: 14px; margin-bottom: 5px; }
+              img { max-width: 80px; margin-bottom: 10px; }
+            </style>
+          </head>
+          <body>
+            <div class="text-center">
+              ${settings?.logoUrl ? `<img src="${settings.logoUrl}" />` : ''}
+              <div class="bold header">${settings?.storeName || 'Sabaidee POS'}</div>
+              <div>${settings?.storeAddress || ''}</div>
+              <div>${settings?.storePhone || ''}</div>
+              <div class="line"></div>
+              <div>${settings?.receiptHeader || ''}</div>
+            </div>
+            <br/>
+            <div>Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
+            <div>Bill #: ${Date.now().toString().slice(-6)}</div>
+            <div class="line"></div>
+            
+            ${items.map(item => `
+              <div class="item">
+                <span style="flex:1">${item.name} <br/> <small>x${item.quantity}</small></span>
+                <span>${(item.price * item.quantity).toLocaleString()}</span>
+              </div>
+            `).join('')}
+            
+            <div class="line"></div>
+            <div class="item bold" style="font-size: 14px;">
+              <span>TOTAL</span>
+              <span>${total.toLocaleString()} ₭</span>
+            </div>
+            <div class="item">
+               <span>PAYMENT</span>
+               <span>${method === 'cash' ? 'CASH' : 'QR PAY'}</span>
+            </div>
+            ${receivedAmount ? `
+            <div class="item">
+               <span>CASH</span>
+               <span>${parseInt(receivedAmount).toLocaleString()}</span>
+            </div>
+            <div class="item">
+               <span>CHANGE</span>
+               <span>${(parseInt(receivedAmount) - total).toLocaleString()}</span>
+            </div>
+            ` : ''}
+            <div class="line"></div>
+            <div class="text-center">
+              ${settings?.receiptFooter || 'Thank you!'}
+            </div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      // Wait for images to load before printing
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 500);
+    }
   };
 
   if (!isOpen) return null;
 
   const change = Math.max(0, (parseInt(receivedAmount) || 0) - total);
+  // Allow confirming QR payments even if generation failed (manual backup)
   const canPay = method === 'qr' || (parseInt(receivedAmount) || 0) >= total;
 
   const handleConfirm = () => {
+    if (isProcessing || isSuccess) return; // Prevent double submission
     setIsProcessing(true);
-    // Simulate processing finalization
     setTimeout(() => {
       setIsProcessing(false);
       setIsSuccess(true);
-      setTimeout(() => {
-        onConfirm(method);
-      }, 1500);
     }, 1000);
+  };
+  
+  const handleSwitchToDemo = () => {
+    setQrCodeImage(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=BCEL_OnePay_${total}_DEMO`);
+    setQrError('');
+    setIsLoadingQR(false);
   };
 
   // Numpad Logic
@@ -184,11 +427,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, isOpen, onClo
 
           <div className="space-y-4 flex-1">
             <button
+              disabled={isSuccess}
               onClick={() => setMethod('cash')}
               className={`w-full text-left p-4 rounded-2xl border-2 transition-all duration-300 flex items-center gap-4 ${
                 method === 'cash' 
                   ? 'border-indigo-600 bg-white shadow-lg shadow-indigo-100' 
-                  : 'border-transparent hover:bg-white hover:shadow-sm text-slate-500'
+                  : 'border-transparent hover:bg-white hover:shadow-sm text-slate-500 disabled:opacity-50'
               }`}
             >
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${method === 'cash' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>
@@ -202,11 +446,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, isOpen, onClo
 
             {isPhaJayEnabled && (
               <button
+                disabled={isSuccess}
                 onClick={() => setMethod('qr')}
                 className={`w-full text-left p-4 rounded-2xl border-2 transition-all duration-300 flex items-center gap-4 ${
                   method === 'qr' 
                     ? 'border-indigo-600 bg-white shadow-lg shadow-indigo-100' 
-                    : 'border-transparent hover:bg-white hover:shadow-sm text-slate-500'
+                    : 'border-transparent hover:bg-white hover:shadow-sm text-slate-500 disabled:opacity-50'
                 }`}
               >
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${method === 'qr' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>
@@ -235,7 +480,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, isOpen, onClo
                  <CheckCircle2 size={48} strokeWidth={3} />
                </div>
                <h2 className="text-3xl font-black text-slate-800 mb-2">{t('paymentSuccess')}</h2>
-               <p className="text-slate-500 font-medium">{t('successDesc')}</p>
+               <p className="text-slate-500 font-medium mb-8">Redirecting to sales...</p>
+               
+               <div className="flex gap-4 w-full max-w-md">
+                 <button 
+                   onClick={handlePrint}
+                   className="flex-1 flex items-center justify-center gap-2 py-4 bg-white border-2 border-slate-200 text-slate-700 font-bold rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all"
+                 >
+                   <Printer size={20} />
+                   {t('printReceipt')}
+                 </button>
+               </div>
              </div>
           ) : (
              <>
@@ -317,34 +572,98 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, isOpen, onClo
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center animate-in slide-in-from-right-8 duration-300 h-full">
-                      <div className="bg-white p-4 rounded-3xl border-2 border-slate-100 shadow-xl mb-6 relative group cursor-pointer w-[280px] h-[280px] flex items-center justify-center bg-slate-50">
-                        <div className="absolute inset-0 bg-indigo-500 rounded-3xl blur-xl opacity-20 group-hover:opacity-40 transition-opacity duration-500"></div>
+                      <div className="bg-white p-4 rounded-3xl border-2 border-slate-100 shadow-xl mb-6 relative group cursor-pointer w-[300px] h-[300px] flex items-center justify-center bg-slate-50 overflow-hidden">
                         
                         {isLoadingQR ? (
                           <div className="flex flex-col items-center gap-3 text-slate-500">
                              <Loader2 size={48} className="animate-spin text-indigo-500" />
                              <span className="text-xs font-bold animate-pulse">Generating BCEL QR...</span>
                           </div>
+                        ) : qrError ? (
+                           <div className="flex flex-col items-center gap-3 text-red-500 p-4 text-center">
+                             <AlertCircle size={40} />
+                             <div>
+                                <p className="font-bold text-sm">Failed to generate QR</p>
+                                <p className="text-[10px] mt-1 opacity-75 break-words max-w-[200px]">{qrError}</p>
+                             </div>
+                             <div className="flex flex-col gap-2 mt-2 w-full">
+                               <button 
+                                 onClick={generatePhaJayQR}
+                                 className="flex items-center justify-center gap-2 bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-xl text-xs font-bold transition-colors w-full"
+                               >
+                                 <RefreshCw size={14} /> Retry
+                               </button>
+                               {qrError.includes("Amount must be between") && (
+                                 <button 
+                                   onClick={handleSwitchToDemo}
+                                   className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold transition-colors w-full"
+                                 >
+                                    <QrCode size={14} /> Switch to Demo QR
+                                 </button>
+                               )}
+                             </div>
+                           </div>
                         ) : qrCodeImage ? (
-                          <img 
-                            src={qrCodeImage} 
-                            alt="Payment QR" 
-                            className="w-full h-full object-contain mix-blend-multiply relative z-10"
-                          />
+                          <>
+                             <img 
+                               src={qrCodeImage} 
+                               alt="Payment QR" 
+                               className="w-full h-full object-contain mix-blend-multiply relative z-10"
+                             />
+                             {/* Socket Status Indicator */}
+                             <div className={`absolute top-2 right-2 flex items-center gap-1.5 bg-white/90 backdrop-blur px-2 py-1 rounded-full border border-slate-100 shadow-sm z-20`}>
+                                <div className={`w-2 h-2 rounded-full ${
+                                    socketStatus === 'connected' ? 'bg-green-500 animate-pulse' : 
+                                    socketStatus === 'error' ? 'bg-yellow-400' : 'bg-yellow-400'
+                                }`}></div>
+                                <span className={`text-[10px] font-bold ${socketStatus === 'error' ? 'text-yellow-600' : 'text-slate-600'}`}>
+                                  {socketStatus === 'connected' ? 'Live' : 
+                                   socketStatus === 'error' ? 'Offline' : 'Connecting'}
+                                </span>
+                             </div>
+                          </>
                         ) : (
-                           <div className="flex flex-col items-center gap-2 text-red-400">
-                             <AlertCircle size={32} />
-                             <span className="text-xs font-bold">QR Gen Failed</span>
+                           <div className="flex flex-col items-center gap-2 text-slate-400">
+                             <Loader2 size={32} className="animate-spin" />
+                             <span className="text-xs font-bold">Initializing...</span>
                            </div>
                         )}
                       </div>
                       
                       <div className="flex flex-col items-center gap-2">
                         <div className="flex items-center gap-2">
-                           <Loader2 size={16} className="animate-spin text-indigo-500" />
                            <p className="text-slate-600 font-bold text-lg">{t('scanPrompt')}</p>
                         </div>
+                        
+                        {activeSecretKey && (
+                          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded">
+                            <Key size={10} />
+                            Key: {activeSecretKey.substring(0, 8)}...
+                          </div>
+                        )}
+
                         <p className="text-slate-400 text-sm max-w-xs text-center">{t('waiting')}</p>
+                        
+                        {socketStatus === 'error' && (
+                           <div className="mt-2 text-xs font-bold text-yellow-600 bg-yellow-50 px-3 py-2 rounded-lg border border-yellow-100 flex flex-col items-center gap-2 max-w-sm text-center animate-in fade-in slide-in-from-top-1">
+                             <div className="flex items-center gap-2">
+                                <AlertTriangle size={16} className="shrink-0" />
+                                <span>{t('offlineMode')}</span>
+                             </div>
+                             {socketErrorMsg && (
+                                <span className="text-[10px] text-red-500 font-mono bg-white/50 px-2 py-1 rounded border border-red-100/50 break-all">
+                                    {socketErrorMsg}
+                                </span>
+                             )}
+                             <button 
+                                onClick={retrySocketConnection} 
+                                className="mt-1 flex items-center gap-1 bg-white px-3 py-1 rounded-md shadow-sm border border-yellow-200 text-yellow-700 hover:bg-yellow-100 transition-colors"
+                             >
+                               <RefreshCw size={12} />
+                               {t('retryConnect')}
+                             </button>
+                           </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -385,21 +704,24 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, isOpen, onClo
                        </button>
                      )}
 
-                     {/* For QR, hide the manual confirm button as it auto-detects, or provide a 'Paid' override */}
                      {method === 'qr' && (
-                        <button
-                          onClick={handleConfirm}
-                          className="flex-1 py-4 px-6 rounded-2xl font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-lg flex items-center justify-center gap-3 transition-all duration-300 border border-indigo-200"
-                        >
-                          {isProcessing ? (
-                             <>
-                             <Loader2 size={24} className="animate-spin" />
-                             <span>Checking Status...</span>
-                             </>
-                          ) : (
-                             <span>Simulate Payment Received</span>
-                          )}
-                        </button>
+                        socketStatus === 'error' ? (
+                          // Offline Fallback Button (Manual Confirm)
+                          <button
+                            onClick={handleConfirm}
+                            disabled={isProcessing}
+                            className="flex-1 py-4 px-6 rounded-2xl font-bold text-white bg-yellow-500 hover:bg-yellow-600 text-lg flex items-center justify-center gap-3 transition-all duration-300 shadow-xl shadow-yellow-200"
+                          >
+                            <AlertTriangle size={24} />
+                            <span>Manual Confirm (Offline)</span>
+                          </button>
+                        ) : (
+                          // Online Mode - Status Only (No Confirm Button)
+                          <div className="flex-1 py-4 px-6 rounded-2xl font-bold text-slate-400 bg-slate-100 border-2 border-slate-100 text-lg flex items-center justify-center gap-3 transition-all duration-300">
+                            <Loader2 size={24} className="animate-spin text-indigo-500" />
+                            <span className="animate-pulse">{t('waiting')}</span>
+                          </div>
+                        )
                      )}
                   </div>
                 </div>

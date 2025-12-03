@@ -18,7 +18,9 @@ export const App = () => {
   // Data with LocalStorage Persistence
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('sabaidee_products');
-    return saved ? JSON.parse(saved) : MOCK_PRODUCTS;
+    let parsed = saved ? JSON.parse(saved) : MOCK_PRODUCTS;
+    // Migration: ensure active field exists
+    return parsed.map((p: any) => ({ ...p, active: p.active ?? true }));
   });
   
   const [categories, setCategories] = useState<Category[]>(() => {
@@ -33,7 +35,15 @@ export const App = () => {
 
   const [settings, setSettings] = useState<StoreSettings>(() => {
     const saved = localStorage.getItem('sabaidee_settings');
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+    let parsed = saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+
+    // FIX: Force update secret key if it's the default placeholder or empty
+    // This solves the issue where users see "Offline Mode" because they have the old key in localStorage
+    if (!parsed.phajaySecretKey || parsed.phajaySecretKey.includes('YOUR_PLATFORM_SECRET_KEY')) {
+      parsed.phajaySecretKey = DEFAULT_SETTINGS.phajaySecretKey;
+    }
+    
+    return parsed;
   });
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -137,12 +147,22 @@ export const App = () => {
   };
 
   // Admin Logic
-  const handleAddProduct = (product: Product) => {
-    setProducts(prev => [...prev, product]);
+  const handleSaveProduct = (product: Product) => {
+    setProducts(prev => {
+      const exists = prev.some(p => p.id === product.id);
+      if (exists) {
+        // Update existing
+        return prev.map(p => p.id === product.id ? product : p);
+      }
+      // Add new
+      return [...prev, product];
+    });
   };
 
-  const handleDeleteProduct = (id: string) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
+  const handleToggleProductStatus = (id: string) => {
+    setProducts(prev => prev.map(p => 
+      p.id === id ? { ...p, active: !p.active } : p
+    ));
   };
 
   const handleAddUser = (user: User) => {
@@ -165,11 +185,12 @@ export const App = () => {
     setSettings(newSettings);
   }
 
-  // Filter Logic
+  // Filter Logic - Only show active products in POS
   const filteredProducts = products.filter(p => {
+    const isActive = p.active; 
     const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
     const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    return isActive && matchesCategory && matchesSearch;
   });
 
   return (
@@ -306,8 +327,8 @@ export const App = () => {
                transactions={transactions}
                users={users}
                settings={settings}
-               onAddProduct={handleAddProduct}
-               onDeleteProduct={handleDeleteProduct}
+               onSaveProduct={handleSaveProduct}
+               onToggleProductStatus={handleToggleProductStatus}
                onAddUser={handleAddUser}
                onDeleteUser={handleDeleteUser}
                onAddCategory={handleAddCategory}
@@ -326,6 +347,7 @@ export const App = () => {
         onConfirm={handlePaymentConfirm}
         lang={lang}
         settings={settings}
+        items={cart}
       />
     </div>
   );

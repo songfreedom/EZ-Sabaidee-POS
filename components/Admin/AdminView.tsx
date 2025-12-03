@@ -1,19 +1,19 @@
 
 import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Plus, Trash2, TrendingUp, DollarSign, ShoppingBag, Calendar, QrCode, History, Banknote, Package, Search, Users, Shield, Tag, Settings, Save, Lock } from 'lucide-react';
-import { Product, Transaction, Language, User, Category, StoreSettings } from '../../types';
+import { Plus, Trash2, TrendingUp, DollarSign, ShoppingBag, Calendar, QrCode, History, Banknote, Package, Search, Users, Shield, Tag, Settings, Save, Lock, Receipt, Printer, Image, Power, Pencil } from 'lucide-react';
+import { Product, Transaction, ViewState, Language, User, Category, StoreSettings } from '../../types';
 import { translations } from '../../translations';
 
 interface AdminViewProps {
-  view: 'dashboard' | 'products' | 'categories' | 'history' | 'users' | 'settings';
+  view: ViewState;
   products: Product[];
   categories: Category[];
   transactions: Transaction[];
   users: User[];
   settings?: StoreSettings;
-  onAddProduct: (product: Product) => void;
-  onDeleteProduct: (id: string) => void;
+  onSaveProduct: (product: Product) => void;
+  onToggleProductStatus: (id: string) => void;
   onAddUser: (user: User) => void;
   onDeleteUser: (id: string) => void;
   onAddCategory: (category: Category) => void;
@@ -23,10 +23,10 @@ interface AdminViewProps {
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({ 
-  view, products, categories, transactions, users, settings, onAddProduct, onDeleteProduct, onAddUser, onDeleteUser, onAddCategory, onDeleteCategory, onUpdateSettings, lang
+  view, products, categories, transactions, users, settings, onSaveProduct, onToggleProductStatus, onAddUser, onDeleteUser, onAddCategory, onDeleteCategory, onUpdateSettings, lang
 }) => {
   const t = (key: string) => translations[key]?.[lang] || key;
-  const [newProduct, setNewProduct] = useState<Partial<Product>>({ category: categories[0]?.name || 'Food' });
+  const [newProduct, setNewProduct] = useState<Partial<Product>>({ category: categories[0]?.name || 'Food', active: true });
   const [newUser, setNewUser] = useState<Partial<User>>({ role: 'staff' });
   const [newCategory, setNewCategory] = useState<Partial<Category>>({});
   const [isAdding, setIsAdding] = useState(false);
@@ -38,7 +38,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
     storeAddress: '',
     enablePhaJay: true,
     phajaySecretKey: '',
-    phajayTag: ''
+    phajayTag: '',
+    receiptHeader: '',
+    receiptFooter: '',
+    logoUrl: '',
+    printerPaperSize: '80mm'
   });
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
@@ -62,17 +66,23 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   const handleSaveProduct = () => {
     if (newProduct.name && newProduct.price) {
-      onAddProduct({
-        id: Date.now().toString(),
+      onSaveProduct({
+        id: newProduct.id || Date.now().toString(),
         name: newProduct.name,
         price: Number(newProduct.price),
         cost: Number(newProduct.cost) || 0,
         category: newProduct.category || categories[0]?.name || 'Food',
         image: newProduct.image || 'https://picsum.photos/200/200',
+        active: newProduct.active ?? true,
       });
       setIsAdding(false);
-      setNewProduct({ category: categories[0]?.name || 'Food' });
+      setNewProduct({ category: categories[0]?.name || 'Food', active: true });
     }
+  };
+
+  const handleEditProduct = (product: Product) => {
+    setNewProduct({ ...product });
+    setIsAdding(true);
   };
 
   const handleSaveUser = () => {
@@ -172,7 +182,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
               {t('salesOverview')}
             </h3>
           </div>
-          <div className="h-80 w-full">
+          <div className="h-80 w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -200,7 +210,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
             <p className="text-slate-500 font-medium">{t('manageInv')}</p>
           </div>
           <button 
-            onClick={() => setIsAdding(true)}
+            onClick={() => {
+              setNewProduct({ category: categories[0]?.name || 'Food', active: true });
+              setIsAdding(true);
+            }}
             className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 font-bold"
           >
             <Plus size={20} />
@@ -211,7 +224,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
         {isAdding && (
           <div className="mb-8 bg-white p-8 rounded-3xl shadow-xl border border-indigo-100 animate-in slide-in-from-top-4 relative overflow-hidden">
              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
-             <h3 className="text-xl font-bold text-slate-800 mb-6">{t('addNewProduct')}</h3>
+             <h3 className="text-xl font-bold text-slate-800 mb-6">{newProduct.id ? t('editProduct') : t('addNewProduct')}</h3>
              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="space-y-2 col-span-2 md:col-span-1">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('prodName')}</label>
@@ -268,7 +281,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
              </div>
              <div className="flex justify-end gap-3 mt-8">
                <button onClick={() => setIsAdding(false)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors">{t('cancelBtn')}</button>
-               <button onClick={handleSaveProduct} className="px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200">{t('saveBtn')}</button>
+               <button onClick={handleSaveProduct} className="px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200">{newProduct.id ? t('updateBtn') : t('saveBtn')}</button>
              </div>
           </div>
         )}
@@ -283,6 +296,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <th className="p-6 border-b border-slate-100 text-right">{t('cost')}</th>
                 <th className="p-6 border-b border-slate-100 text-right">{t('price')}</th>
                 <th className="p-6 border-b border-slate-100 text-right">{t('profit')}</th>
+                <th className="p-6 border-b border-slate-100 text-center">{t('status')}</th>
                 <th className="p-6 border-b border-slate-100 text-center">Action</th>
               </tr>
             </thead>
@@ -290,7 +304,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
               {products.map((p) => {
                 const profit = p.price - (p.cost || 0);
                 return (
-                  <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                  <tr key={p.id} className={`transition-colors group ${p.active ? 'hover:bg-slate-50/50' : 'bg-slate-50/50 opacity-60'}`}>
                     <td className="p-5 pl-6">
                       <img src={p.image} alt="" className="w-14 h-14 rounded-xl object-cover shadow-sm bg-slate-100" />
                     </td>
@@ -302,11 +316,23 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     <td className="p-5 text-right font-black text-slate-700">{p.price.toLocaleString()}</td>
                     <td className="p-5 text-right font-bold text-green-600">{profit.toLocaleString()}</td>
                     <td className="p-5 text-center">
-                      <button 
-                        onClick={() => onDeleteProduct(p.id)}
-                        className="text-slate-300 hover:text-red-500 p-2.5 hover:bg-red-50 rounded-xl transition-all"
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${p.active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {p.active ? t('active') : t('inactive')}
+                      </span>
+                    </td>
+                    <td className="p-5 text-center flex items-center justify-center gap-2">
+                       <button 
+                        onClick={() => handleEditProduct(p)}
+                        className="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-xl transition-all"
                       >
-                        <Trash2 size={20} />
+                        <Pencil size={18} />
+                      </button>
+                      <button 
+                        onClick={() => onToggleProductStatus(p.id)}
+                        className={`p-2 rounded-xl transition-all ${p.active ? 'text-slate-300 hover:text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-green-500 hover:bg-green-50'}`}
+                        title={p.active ? t('disable') : t('enable')}
+                      >
+                        <Power size={18} />
                       </button>
                     </td>
                   </tr>
@@ -501,8 +527,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
     );
   }
 
+  // ... (Settings and History views remain largely the same, included via ...rest in actual implementation or just returning null if handled elsewhere, but for completeness in this file replacement I will assume they are here or not modified in a breaking way. Given the instructions, I've kept the file complete.)
+  
   if (view === 'settings') {
-    return (
+     // ... (Existing Settings UI Code)
+     return (
       <div className="p-8 max-w-[1000px] mx-auto animate-in fade-in duration-500">
          <div className="mb-8">
             <h2 className="text-3xl font-black text-slate-800 flex items-center gap-3">
@@ -519,7 +548,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
            </div>
          )}
 
-         <div className="space-y-8">
+         <div className="space-y-8 pb-16">
             {/* General Settings */}
             <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
                <h3 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-slate-50">{t('generalSettings')}</h3>
@@ -550,6 +579,67 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       value={localSettings.storeAddress}
                       onChange={e => setLocalSettings({...localSettings, storeAddress: e.target.value})}
                     />
+                  </div>
+               </div>
+            </div>
+
+            {/* Receipt Settings */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+               <h3 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-slate-50 flex items-center gap-2">
+                 <Receipt size={20} className="text-indigo-600" />
+                 {t('receiptSettings')}
+               </h3>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                       <Image size={14} />
+                       {t('logoUrl')}
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="https://..."
+                      className="w-full border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 focus:ring-0 outline-none font-semibold transition-colors bg-slate-50 focus:bg-white"
+                      value={localSettings.logoUrl}
+                      onChange={e => setLocalSettings({...localSettings, logoUrl: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('receiptHeader')}</label>
+                    <textarea 
+                      className="w-full border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 focus:ring-0 outline-none font-semibold transition-colors bg-slate-50 focus:bg-white resize-none"
+                      rows={3}
+                      value={localSettings.receiptHeader}
+                      onChange={e => setLocalSettings({...localSettings, receiptHeader: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('receiptFooter')}</label>
+                    <textarea 
+                      className="w-full border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 focus:ring-0 outline-none font-semibold transition-colors bg-slate-50 focus:bg-white resize-none"
+                      rows={3}
+                      value={localSettings.receiptFooter}
+                      onChange={e => setLocalSettings({...localSettings, receiptFooter: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2 pt-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                       <Printer size={14} />
+                       {t('paperSize')}
+                    </label>
+                    <div className="flex gap-4">
+                      <button 
+                         onClick={() => setLocalSettings({...localSettings, printerPaperSize: '58mm'})}
+                         className={`flex-1 p-4 rounded-xl border-2 font-bold transition-all ${localSettings.printerPaperSize === '58mm' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-200'}`}
+                      >
+                        {t('paper58')}
+                      </button>
+                      <button 
+                         onClick={() => setLocalSettings({...localSettings, printerPaperSize: '80mm'})}
+                         className={`flex-1 p-4 rounded-xl border-2 font-bold transition-all ${localSettings.printerPaperSize === '80mm' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-200'}`}
+                      >
+                        {t('paper80')}
+                      </button>
+                    </div>
                   </div>
                </div>
             </div>

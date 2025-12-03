@@ -1,12 +1,14 @@
 
 import { Product, User, Category, StoreSettings } from './types';
 
-// PHAJAY CONFIGURATION
+// PHAJAY CONFIGURATION (SANDBOX BCEL QR)
 export const PHAJAY_CONFIG = {
-  API_URL: 'https://payment-gateway.phajay.co/v1/api/payment/generate-bcel-qr',
-  // WARNING: In production, do not store secret key in frontend code. 
-  // Call your own backend, which then calls PhaJay.
-  SECRET_KEY: 'YOUR_PLATFORM_SECRET_KEY_HERE' 
+  // Sandbox BCEL QR Generator Endpoint
+  API_URL: 'https://payment-gateway.phajay.co/v1/api/test/payment/generate-bcel-qr',
+  // Main Portal Socket URL
+  SOCKET_URL: 'https://portal.phajay.co',
+  // Sandbox Test Key
+  SECRET_KEY: '$2a$10$1nbGn5SbywO4hw2mvssZWeIm4Hi15r7/CsmFutk5zPXvyRDOu9ABu' 
 };
 
 export const DEFAULT_SETTINGS: StoreSettings = {
@@ -14,8 +16,12 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   storePhone: '020-5555-8888',
   storeAddress: 'Vientiane, Laos',
   enablePhaJay: true,
-  phajaySecretKey: '', // Empty by default, user must enter it
-  phajayTag: 'POS_01'
+  phajaySecretKey: '$2a$10$1nbGn5SbywO4hw2mvssZWeIm4Hi15r7/CsmFutk5zPXvyRDOu9ABu', 
+  phajayTag: 'POS_01',
+  receiptHeader: 'Welcome to Sabaidee POS',
+  receiptFooter: 'Thank you for shopping with us!',
+  logoUrl: '',
+  printerPaperSize: '80mm'
 };
 
 export const MOCK_CATEGORIES: Category[] = [
@@ -33,6 +39,7 @@ export const MOCK_PRODUCTS: Product[] = [
     cost: 12000,
     category: 'Food',
     image: 'https://picsum.photos/id/1080/200/200',
+    active: true,
   },
   {
     id: '2',
@@ -41,6 +48,7 @@ export const MOCK_PRODUCTS: Product[] = [
     cost: 18000,
     category: 'Food',
     image: 'https://picsum.photos/id/225/200/200',
+    active: true,
   },
   {
     id: '3',
@@ -49,6 +57,7 @@ export const MOCK_PRODUCTS: Product[] = [
     cost: 25000,
     category: 'Food',
     image: 'https://picsum.photos/id/312/200/200',
+    active: true,
   },
   {
     id: '4',
@@ -57,6 +66,7 @@ export const MOCK_PRODUCTS: Product[] = [
     cost: 2000,
     category: 'Side',
     image: 'https://picsum.photos/id/431/200/200',
+    active: true,
   },
   {
     id: '5',
@@ -65,6 +75,7 @@ export const MOCK_PRODUCTS: Product[] = [
     cost: 11000,
     category: 'Drink',
     image: 'https://picsum.photos/id/420/200/200',
+    active: true,
   },
   {
     id: '6',
@@ -73,6 +84,7 @@ export const MOCK_PRODUCTS: Product[] = [
     cost: 2500,
     category: 'Drink',
     image: 'https://picsum.photos/id/500/200/200',
+    active: true,
   },
   {
     id: '7',
@@ -81,6 +93,7 @@ export const MOCK_PRODUCTS: Product[] = [
     cost: 8000,
     category: 'Drink',
     image: 'https://picsum.photos/id/700/200/200',
+    active: true,
   },
   {
     id: '8',
@@ -89,6 +102,7 @@ export const MOCK_PRODUCTS: Product[] = [
     cost: 35000,
     category: 'Food',
     image: 'https://picsum.photos/id/800/200/200',
+    active: true,
   },
 ];
 
