@@ -94,10 +94,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen
   // Helper to map technical errors to user-friendly text
   const getFriendlyError = (msg: string) => {
     if (msg.includes('websocket') || msg.includes('transport')) {
-      return t('socketBlockError');
+      return `${t('socketBlockError')} (Code: WS_ERR)`;
     }
     if (msg.includes('xhr') || msg.includes('poll') || msg.includes('fetch')) {
-      return t('socketNetError');
+      return `${t('socketNetError')} (Code: NET_ERR)`;
+    }
+    if (msg.includes('unauthorized') || msg.includes('handshake')) {
+      return "Invalid Secret Key (Code: AUTH_ERR)";
     }
     return msg;
   };
@@ -114,23 +117,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen
       return;
     }
 
-    // A. URL Construction
     const baseUrl = PHAJAY_CONFIG.SOCKET_URL.replace(/\/$/, ''); 
+    // Construct URL with key parameter explicitly: https://portal.phajay.co/?key=<KEY>
+    // Using encodeURIComponent to handle special characters in the hash ($, /)
+    const socketUrl = `${baseUrl}/?key=${encodeURIComponent(cleanKey)}`;
     
-    console.log('Connecting to Socket URL:', baseUrl); 
+    console.log('Connecting to Socket URL:', baseUrl); // Log base URL for safety
     setSocketStatus('connecting');
     setSocketErrorMsg('');
     
     // B. ສ້າງການເຊື່ອມຕໍ່ (Create Connection)
-    // We allow both 'websocket' and 'polling' transports to fix connection issues
-    // where raw websockets might be blocked by the network/browser environment.
-    const newSocket = io(baseUrl, {
-      transports: ['websocket', 'polling'], // Allow fallback to polling
-      query: {
-        key: cleanKey
-      },
+    // Strictly using 'websocket' transport as requested in documentation
+    // Added polling as fallback for better compatibility if websocket is blocked
+    const newSocket = io(socketUrl, {
+      transports: ['websocket', 'polling'], 
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
     });
 
     // C. ຟັງເຫດການເຊື່ອມຕໍ່ (Listen for Connect)
@@ -143,7 +145,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen
     newSocket.on('connect_error', (err) => {
       console.error('Connection failed:', err.message);
       setSocketStatus('error');
-      // Use friendly error mapping
       setSocketErrorMsg(getFriendlyError(err.message));
     });
 
@@ -162,7 +163,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen
     console.log('Subscribing to event:', eventName);
     
     newSocket.on(eventName, (data: any) => {
-      console.log('Data received (Payment Confirmation):', data);
+      console.log('===>>> Callback Data ໄດ້ຮັບແລ້ວ:', data);
       
       // 5. ການປະມວນຜົນການຢືນຢັນ (Process Payment Success)
       // ຮັບຂໍ້ມູນການຢືນຢັນ data ທີ່ມີສະຖານະເປັນ PAYMENT_COMPLETED
@@ -220,6 +221,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen
     try {
       // 1. ກຳນົດ Request Payload
       // ຂໍ້ຄວນລະວັງ: description ສໍາລັບ BCEL ບໍ່ຮອງຮັບຕົວອັກສອນລາວ/ໄທໃນປັດຈຸບັນ
+      // Generate safe description (English/Numbers only)
       const safeDescription = `Bill-${Date.now().toString().slice(-6)}`;
       
       const payload = {
@@ -253,7 +255,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen
 
         if (qr) {
            // ລະບົບຈະໄດ້ຮັບຂໍ້ມູນທີ່ປະກອບມີ QR String.
-           // Convert raw QR string to renderable image URL for display
+           // Convert raw QR string to renderable image URL for display via QR Server
            setQrCodeImage(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
         } else {
            throw new Error('QR Code not found in response');
@@ -610,15 +612,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen
                                alt="Payment QR" 
                                className="w-full h-full object-contain mix-blend-multiply relative z-10"
                              />
-                             {/* Socket Status Indicator */}
-                             <div className={`absolute top-2 right-2 flex items-center gap-1.5 bg-white/90 backdrop-blur px-2 py-1 rounded-full border border-slate-100 shadow-sm z-20`}>
-                                <div className={`w-2 h-2 rounded-full ${
-                                    socketStatus === 'connected' ? 'bg-green-500 animate-pulse' : 
-                                    socketStatus === 'error' ? 'bg-yellow-400' : 'bg-yellow-400'
-                                }`}></div>
-                                <span className={`text-[10px] font-bold ${socketStatus === 'error' ? 'text-yellow-600' : 'text-slate-600'}`}>
-                                  {socketStatus === 'connected' ? 'Live' : 
-                                   socketStatus === 'error' ? 'Offline' : 'Connecting'}
+                             {/* Enhanced Socket Status Indicator */}
+                             <div className={`absolute top-2 right-2 flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm z-20 ${
+                                socketStatus === 'connected' ? 'bg-green-50/90 border-green-200 text-green-700' :
+                                socketStatus === 'error' ? 'bg-red-50/90 border-red-200 text-red-700' :
+                                'bg-blue-50/90 border-blue-200 text-blue-700'
+                             }`}>
+                                {socketStatus === 'connecting' && <Loader2 size={14} className="animate-spin" />}
+                                {socketStatus === 'connected' && <Wifi size={14} />}
+                                {socketStatus === 'error' && <WifiOff size={14} />}
+                                <span className="text-xs font-bold">
+                                    {socketStatus === 'connected' ? 'Live' : 
+                                     socketStatus === 'error' ? 'Offline' : 'Connecting...'}
                                 </span>
                              </div>
                           </>
@@ -645,21 +650,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ total, items, isOpen
                         <p className="text-slate-400 text-sm max-w-xs text-center">{t('waiting')}</p>
                         
                         {socketStatus === 'error' && (
-                           <div className="mt-2 text-xs font-bold text-yellow-600 bg-yellow-50 px-3 py-2 rounded-lg border border-yellow-100 flex flex-col items-center gap-2 max-w-sm text-center animate-in fade-in slide-in-from-top-1">
+                           <div className="mt-2 text-xs font-bold text-yellow-600 bg-yellow-50 px-3 py-2 rounded-lg border border-yellow-100 flex flex-col items-center gap-2 max-w-sm text-center">
                              <div className="flex items-center gap-2">
                                 <AlertTriangle size={16} className="shrink-0" />
                                 <span>{t('offlineMode')}</span>
                              </div>
                              {socketErrorMsg && (
-                                <span className="text-[10px] text-red-500 font-mono bg-white/50 px-2 py-1 rounded border border-red-100/50 break-all">
-                                    {socketErrorMsg}
-                                </span>
+                               <p className="text-[10px] opacity-80">{socketErrorMsg}</p>
                              )}
-                             <button 
-                                onClick={retrySocketConnection} 
-                                className="mt-1 flex items-center gap-1 bg-white px-3 py-1 rounded-md shadow-sm border border-yellow-200 text-yellow-700 hover:bg-yellow-100 transition-colors"
-                             >
-                               <RefreshCw size={12} />
+                             <button onClick={retrySocketConnection} className="text-xs underline hover:text-yellow-800 font-bold">
                                {t('retryConnect')}
                              </button>
                            </div>
