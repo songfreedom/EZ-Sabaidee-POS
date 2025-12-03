@@ -1,0 +1,5 @@
+{
+  "name": "EZ Sabaidee POS",
+  "description": "A modern, bilingual (Lao/English) Point of Sale system with Dashboard, Inventory Management, and QR Payment simulation.",
+  "requestFramePermissions": []
+}
